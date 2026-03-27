@@ -16,7 +16,7 @@ st.markdown("---")
 @st.cache_data(ttl=300)
 def load_data():
     try:
-        sheet_url = "https://docs.google.com/spreadsheets/d/1TuoR9NWHk_AEzwHJZH9G609FhEuYLs3OG80ImjDJfR8/edit?usp=sharing"
+        sheet_url = "https://docs.google.com/spreadsheets/d/1EXiXsOQ0VsfIbZlUpN3r6g0-aRNUUEKZDVZHh_xZnEY/edit?usp=sharing"
         df = pd.read_csv(sheet_url)
         df.columns = df.columns.str.strip()
         
