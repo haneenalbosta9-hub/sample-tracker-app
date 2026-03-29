@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import gspread
-from google.oauth2.service_account import Credentials
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -44,8 +43,7 @@ def load_data() -> pd.DataFrame:
     """
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        gc   = gspread.authorize(creds)
+        gc   = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
         ws   = gc.open_by_key(SPREADSHEET_ID).worksheet(SHEET_SAMPLES)
         records = ws.get_all_records(value_render_option="FORMATTED_VALUE")
 
@@ -252,53 +250,51 @@ with tab2:
 
     if df_env.empty:
         st.info("No Environmental test records found.")
-        st.stop()
+    else:
+        # Build month list from Received Date
+        df_env["_month_label"] = df_env["Received Date"].dt.strftime("%B %Y")
+        months = (
+            df_env.dropna(subset=["Received Date"])
+            ["_month_label"]
+            .unique()
+        )
+        # Sort chronologically
+        months_sorted = sorted(
+            months,
+            key=lambda m: datetime.strptime(m, "%B %Y"),
+            reverse=True
+        )
 
-    # Build month list from Received Date
-    df_env["_month_label"] = df_env["Received Date"].dt.strftime("%B %Y")
-    months = (
-        df_env.dropna(subset=["Received Date"])
-        ["_month_label"]
-        .unique()
-    )
-    # Sort chronologically
-    months_sorted = sorted(
-        months,
-        key=lambda m: datetime.strptime(m, "%B %Y"),
-        reverse=True
-    )
+        if not months_sorted:
+            st.warning("No dated Environmental records found.")
+        else:
+            selected_month = st.selectbox("Select Month", months_sorted)
+            month_df = df_env[df_env["_month_label"] == selected_month].copy()
 
-    if not months_sorted:
-        st.warning("No dated Environmental records found.")
-        st.stop()
+            st.markdown(f"### 📅 {selected_month} — {len(month_df)} Environmental Sample(s)")
 
-    selected_month = st.selectbox("Select Month", months_sorted)
-    month_df = df_env[df_env["_month_label"] == selected_month].copy()
+            # Summary metrics for the month
+            e1, e2, e3 = st.columns(3)
+            e1.metric("Total",       len(month_df))
+            e2.metric("In Progress", (month_df["Test Status"] == "In Progress").sum())
+            e3.metric("Released",    (month_df["Test Status"] == "Released").sum())
 
-    st.markdown(f"### 📅 {selected_month} — {len(month_df)} Environmental Sample(s)")
+            st.markdown("---")
 
-    # Summary metrics for the month
-    e1, e2, e3 = st.columns(3)
-    e1.metric("Total",       len(month_df))
-    e2.metric("In Progress", (month_df["Test Status"] == "In Progress").sum())
-    e3.metric("Released",    (month_df["Test Status"] == "Released").sum())
+            # Full detail table
+            show_cols = ["Sample ID", "Unit No.", "Product Name", "Received Date",
+                         "Test Performing Date", "Test Status",
+                         "Customer Name", "Sample Batch No."]
+            avail_cols = [c for c in show_cols if c in month_df.columns]
+            disp_env = month_df[avail_cols].copy()
+            disp_env["Received Date"]       = disp_env["Received Date"].apply(fmt_date)
+            disp_env["Test Performing Date"] = disp_env["Test Performing Date"].apply(fmt_date)
+            st.dataframe(disp_env, use_container_width=True, hide_index=True)
 
-    st.markdown("---")
-
-    # Full detail table
-    show_cols = ["Sample ID", "Unit No.", "Product Name", "Received Date",
-                 "Test Performing Date", "Test Status",
-                 "Customer Name", "Sample Batch No."]
-    avail_cols = [c for c in show_cols if c in month_df.columns]
-    disp_env = month_df[avail_cols].copy()
-    disp_env["Received Date"]       = disp_env["Received Date"].apply(fmt_date)
-    disp_env["Test Performing Date"] = disp_env["Test Performing Date"].apply(fmt_date)
-    st.dataframe(disp_env, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.markdown("#### Sample Details")
-    for i, (_, row) in enumerate(month_df.iterrows()):
-        show_sample_card(row, i)
+            st.markdown("---")
+            st.markdown("#### Sample Details")
+            for i, (_, row) in enumerate(month_df.iterrows()):
+                show_sample_card(row, i)
 
 st.markdown("---")
 st.caption(f"🔄 Data refreshes every 60 s  ·  Last loaded: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
